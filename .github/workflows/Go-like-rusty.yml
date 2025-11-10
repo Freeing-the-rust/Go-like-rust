@@ -140,6 +140,26 @@ jobs:
           git push backup main || echo "⚠️ Backup sync failed (non-fatal)"
 
       # ---------------------------------------------------------
+      - name: 🤝 Ensure README has contribution section
+        run: |
+          if ! grep -q "## 🤝 Contributing" README.md 2>/dev/null; then
+            echo "" >> README.md
+            echo "## 🤝 Contributing" >> README.md
+            echo "Contributions are welcome!" >> README.md
+            echo "" >> README.md
+            echo "If you'd like to improve Go-like-Rust, open a Pull Request." >> README.md
+            echo "" >> README.md
+            echo "_(This section was automatically added by CI)_" >> README.md
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "🤝 Auto-add contribution section to README" || echo "No changes"
+            git push origin main || echo "✅ No push needed"
+          else
+            echo "✅ README already has a contribution section."
+          fi
+
+      # ---------------------------------------------------------
       - name: 📦 Upload artifacts (proof + diff)
         uses: actions/upload-artifact@v4
         with:
