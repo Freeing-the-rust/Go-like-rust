@@ -1,4 +1,4 @@
-name: "🏛️ Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.4 / Go Executable Release)"
+name: "🏛️ Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.5 / Go Executable Release)"
 
 on:
   push:
@@ -59,25 +59,25 @@ jobs:
           if [ -f scripts/translate_rust_to_go.py ]; then
             bash -c '(python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go'
           else
-            cat > transpiled/main.go <<'EOF'
-package main
+            cat > transpiled/main.go <<-'EOF'
+              package main
 
-import (
-    "bufio"
-    "fmt"
-    "os"
-)
+              import (
+                  "bufio"
+                  "fmt"
+                  "os"
+              )
 
-func main() {
-    fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")
-    fmt.Println("Every value lives on the heap.")
-    fmt.Println()
-    fmt.Println("Press ENTER to exit (Heap-Hop).")
+              func main() {
+                  fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")
+                  fmt.Println("Every value lives on the heap.")
+                  fmt.Println()
+                  fmt.Println("Press ENTER to exit (Heap-Hop).")
 
-    reader := bufio.NewReader(os.Stdin)
-    _, _ = reader.ReadBytes('\n')
-}
-EOF
+                  reader := bufio.NewReader(os.Stdin)
+                  _, _ = reader.ReadBytes('\n')
+              }
+            EOF
           fi
           echo "✅ Transpilation complete — all heap variables, no stack life."
 
@@ -177,10 +177,10 @@ EOF
       - name: "🚀 Create or Update Release"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "heap-hop-v4.4"
+          tag_name: "heap-hop-v4.5"
           name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler)"
           body: |
-            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.4)**  
+            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.5)**  
             ✅ Rust → Go 기반 Heap 모드 실행파일 릴리즈  
             🦀 RustSpec 참조 + Heap-Hop Philosophy 반영  
             🔐 ProofLedger + SHA256 해시 포함  
