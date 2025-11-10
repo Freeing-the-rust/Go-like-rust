@@ -60,15 +60,15 @@ jobs:
             bash -c '(python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go'
           else
             cat > transpiled/main.go <<'EOF'
-package main
+            package main
 
-import "fmt"
+            import "fmt"
 
-func main() {
-    fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")
-    fmt.Println("Every value lives on the heap.")
-}
-EOF
+            func main() {
+                fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")
+                fmt.Println("Every value lives on the heap.")
+            }
+          EOF
           fi
           echo "✅ Transpilation complete — all heap variables, no stack life."
 
