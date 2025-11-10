@@ -1,12 +1,10 @@
-name: 🏛️ Go-like-Rust Transpiler (v2.9 — Foundation with README Rank Embed Edition)
+name: 🏛️ Go-like-Rust Transpiler (v3.1 — Auto Graph Embed + Build Badge + Full Release)
 
 on:
   push:
     branches: [main]
-  pull_request:
-    types: [closed]
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *"     # 매일 자정 UTC
   workflow_dispatch:
 
 permissions:
@@ -15,7 +13,7 @@ permissions:
 env:
   BUILD_DIR: build/transpiled
   LEDGER_DIR: proof
-  SNAPSHOT_TAG: snapshot-transpile-${{ github.run_number }}
+  SNAPSHOT_TAG: snapshot-v3.1-${{ github.run_number }}
   BACKUP_REPO: r3c-foundation/r3c-backup
 
 jobs:
@@ -23,16 +21,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------------------------------------------------
       - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # ---------------------------------------------------------
       - name: ⚙️ Setup environment
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y gnuplot
-          mkdir -p "$GITHUB_WORKSPACE/$LEDGER_DIR"
+          sudo apt-get install -y gnuplot golang-go
+          mkdir -p "$GITHUB_WORKSPACE/$LEDGER_DIR" "$GITHUB_WORKSPACE/$BUILD_DIR"
+
+      # ---------------------------------------------------------
+      - name: 🏗️ Build Go-like-Rust binary
+        id: build
+        run: |
+          echo "🏗️ Building Go-like-Rust transpiler..."
+          go mod tidy
+          go build -o "$BUILD_DIR/gcrust" main.go && echo "✅ Build Success" > build_status.txt || echo "❌ Build Failed" > build_status.txt
+          BUILD_RESULT=$(cat build_status.txt)
+          echo "build_status=$BUILD_RESULT" >> $GITHUB_OUTPUT
+          echo "Build status: $BUILD_RESULT"
 
       # ---------------------------------------------------------
       - name: 🧾 Record contributor ledger
@@ -41,14 +52,12 @@ jobs:
           EMAIL=$(git log -1 --pretty=format:'%ae')
           TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           echo "[$TIMESTAMP] $AUTHOR <$EMAIL>" >> "$LEDGER_DIR/contributor-ledger.txt"
-          echo "✅ Contributor ledger updated with $AUTHOR"
 
       # ---------------------------------------------------------
-      - name: 🧮 Calculate character-based contribution scores
+      - name: 🧮 Calculate contributor scores
         run: |
           echo "👥 Character-Based Contribution Scores — $(date -u)" > "$LEDGER_DIR/contributor-scores.txt"
           echo "" >> "$LEDGER_DIR/contributor-scores.txt"
-
           rm -f "$LEDGER_DIR/contributor-rank-data.txt"
           for email in $(git log --format='%ae' | sort | uniq); do
             total_chars=$(git log --author="$email" --pretty=tformat: --numstat | awk '{add+=$1} END {print add}')
@@ -58,69 +67,69 @@ jobs:
             echo "$name $total_chars" >> "$LEDGER_DIR/contributor-rank-data.txt"
           done
 
-          echo "" >> "$LEDGER_DIR/contributor-scores.txt"
-          echo "_(Character count = total added characters across commits)_" >> "$LEDGER_DIR/contributor-scores.txt"
-          echo "✅ Contributor character scores updated"
-
       # ---------------------------------------------------------
-      - name: 📈 Generate contributor rank SVG
+      - name: 📈 Generate contributor rank graph
         run: |
           cd "$LEDGER_DIR"
           if [ -s contributor-rank-data.txt ]; then
             sort -k2 -nr contributor-rank-data.txt > rank-sorted.txt
-            echo "set terminal svg size 800,400; \
+            echo "set terminal svg size 900,400; \
                   set output 'contributor-rank.svg'; \
                   set title 'Go-like-Rust Contributor Ranking'; \
                   set style data histograms; \
                   set style fill solid; \
+                  set boxwidth 0.5; \
                   set ylabel 'Characters Added'; \
                   set xtics rotate by -25; \
                   plot 'rank-sorted.txt' using 2:xtic(1) title 'Char Count'" | gnuplot
-            echo "✅ SVG graph generated at proof/contributor-rank.svg"
-          else
-            echo "⚠️ No rank data found, skipping SVG."
+            echo "✅ Graph generated at proof/contributor-rank.svg"
           fi
 
       # ---------------------------------------------------------
-      - name: 🧩 Embed rank graph into README
+      - name: 🧩 Embed build badge + graph into README
         run: |
+          BUILD_BADGE="![Build Status](https://img.shields.io/badge/build-${{ steps.build.outputs.build_status// /_ }}-blue.svg)"
           GRAPH_PATH="proof/contributor-rank.svg"
           RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/${GRAPH_PATH}"
-          if [ -f "$GRAPH_PATH" ]; then
-            echo "🪶 Embedding rank graph into README"
-            # 기존 그래프 섹션 삭제
-            sed -i '/## 🏆 Contributor Ranking/,$d' README.md 2>/dev/null || true
-            echo "" >> README.md
-            echo "## 🏆 Contributor Ranking" >> README.md
-            echo "" >> README.md
-            echo "![Contributor Rank Graph]($RAW_URL)" >> README.md
-            echo "" >> README.md
-            echo "_(This graph is auto-generated by CI — updated on every push)_" >> README.md
-            git add README.md
-            git commit -m "🏆 Auto-embed contributor rank graph in README" || echo "No changes"
-            git push origin main || echo "✅ No push needed"
-          else
-            echo "⚠️ No SVG graph found; skipping embed."
-          fi
+
+          echo "🪶 Updating README..."
+          sed -i '/## 🏗️ Build Status/,$d' README.md 2>/dev/null || true
+          {
+            echo "## 🏗️ Build Status"
+            echo ""
+            echo "$BUILD_BADGE"
+            echo ""
+            echo "## 🏆 Contributor Ranking"
+            echo ""
+            echo "![Contributor Rank Graph]($RAW_URL)"
+            echo ""
+            echo "_(Auto-generated by CI — build + rank updated on every push)_"
+          } >> README.md
+
+          git add README.md
+          git commit -m "🏗️ Auto-update build badge + contributor graph in README" || echo "No changes"
+          git push origin main || echo "✅ No push needed"
 
       # ---------------------------------------------------------
-      - name: 🌀 Create release (with graph)
+      - name: 🌀 Create snapshot release (with binary + proof + graph)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "🌀 Creating release: $SNAPSHOT_TAG"
           gh release delete "$SNAPSHOT_TAG" --yes || true
           gh release create "$SNAPSHOT_TAG" \
+            "$BUILD_DIR/gcrust" \
             "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-ledger.txt" \
             "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-scores.txt" \
             "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-rank.svg" \
-            --title "Go-like-Rust Snapshot v2.9" \
-            --notes "Contributor rank visualization embedded in README — $(date -u)" || true
+            --title "Go-like-Rust Snapshot v3.1" \
+            --notes "Includes auto build badge + embedded contributor graph — $(date -u)" || true
 
       # ---------------------------------------------------------
       - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: contributor-rank-v2.9-${{ github.run_number }}
+          name: gcrust-v3.1-${{ github.run_number }}
           path: |
+            $BUILD_DIR/
             $LEDGER_DIR/
