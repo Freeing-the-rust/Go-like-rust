@@ -57,7 +57,7 @@ jobs:
           mkdir -p build transpiled proof ledger reports
           echo "⚙️ Translating Rust to Go-like heap-based code..."
           if [ -f scripts/translate_rust_to_go.py ]; then
-            (python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go
+            bash -c '(python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go'
           else
             cat > transpiled/main.go <<'EOF'
 package main
