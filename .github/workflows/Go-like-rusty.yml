@@ -6,12 +6,16 @@ on:
   pull_request:
     types: [ closed ]
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *"  # 09:00 KST
   workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
+
+concurrency:
+  group: go-like-rust-heap-hop-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-3os:
@@ -29,25 +33,31 @@ jobs:
         with:
           go-version: "1.23"
 
+      - name: "🧠 Setup Python (for translator)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: "📦 Install Dependencies"
         shell: bash
         run: |
-          echo "▶️ Setting up environment for ${{ matrix.os }}"
+          echo "▶️ Setting up environment for ${{ matrix.os }} (RUNNER_OS=$RUNNER_OS)"
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo apt-get update && sudo apt-get install -y git zip diffutils
+            sudo apt-get update && sudo apt-get install -y git zip unzip diffutils
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install git diffutils || true
+            brew install git gnu-sed diffutils || true
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Using preinstalled Git on Windows runner"
+            echo "Using preinstalled Git/Zip on Windows runner"
           fi
 
       - name: "🏗️ Transpile Rust → Go (All is Heap Mode)"
         shell: bash
         run: |
-          mkdir -p build transpiled proof ledger
+          set -euo pipefail
+          mkdir -p build transpiled proof ledger reports
           echo "⚙️ Translating Rust to Go-like heap-based code..."
           if [ -f scripts/translate_rust_to_go.py ]; then
-            python3 scripts/translate_rust_to_go.py src/ > transpiled/main.go
+            (python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go
           else
             cat > transpiled/main.go <<'EOF'
 package main
@@ -65,72 +75,87 @@ EOF
       - name: "🔨 Build Go Executable"
         shell: bash
         run: |
-          echo "🏗️ Building Go-like-Rust executable..."
+          set -euo pipefail
           cd transpiled
-          GOOS=$(echo "${{ matrix.os }}" | cut -d'-' -f1)
-          OUTPUT="../build/go_like_rust_${GOOS}"
+
+          # Normalize GOOS label for naming; build for native runner
+          case "${RUNNER_OS}" in
+            Linux)  GOOS_NAME="linux" ;;
+            macOS)  GOOS_NAME="darwin" ;;
+            Windows) GOOS_NAME="windows" ;;
+            *) GOOS_NAME="$(echo "${{ matrix.os }}" | cut -d'-' -f1)" ;;
+          esac
+
+          OUT="../build/go_like_rust_${GOOS_NAME}"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            go build -o "${OUTPUT}.exe" main.go
+            go build -trimpath -ldflags="-s -w" -o "${OUT}.exe" main.go
           else
-            go build -o "${OUTPUT}" main.go
+            go build -trimpath -ldflags="-s -w" -o "${OUT}" main.go
           fi
           cd ..
 
-          echo "✅ Go executable build complete on $(date -u)" > ledger/build-info-${{ matrix.os }}.txt
-          echo "$(git config user.name) <$(git config user.email)> — heap-built on ${{ matrix.os }}" > ledger/contributor-ledger-${{ matrix.os }}.txt
+          echo "✅ Go executable build complete on $(date -u)" > ledger/build-info-${GOOS_NAME}.txt
+          echo "$(git config user.name || echo 'unknown') <$(git config user.email || echo 'unknown')> — heap-built on ${GOOS_NAME}" > ledger/contributor-ledger-${GOOS_NAME}.txt
 
-      - name: "🧠 RustSpec Detection (for historical reference)"
+      - name: "🧠 RustSpec Detection (report fragment)"
         shell: bash
         run: |
-          mkdir -p proof
+          set -euo pipefail
+          mkdir -p proof reports
           SYNC_DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
-          RUST_VERSION=$(rustc --version 2>/dev/null || echo "Rust not installed (heap-mode)")
-          echo "$RUST_VERSION" > proof/current_rust_version.txt
-
-          if [ -f proof/last_rust_version.txt ]; then
-            diff -u proof/last_rust_version.txt proof/current_rust_version.txt > proof/rust_diff.txt || true
-          else
-            echo "(First sync, no previous version)" > proof/rust_diff.txt
-          fi
-          cp proof/current_rust_version.txt proof/last_rust_version.txt
-
+          RUST_VERSION=$( (rustc --version 2>/dev/null) || echo "Rust not installed (heap-mode)" )
+          echo "$RUST_VERSION" > "proof/current_rust_version-${{ matrix.os }}.txt"
           {
-            echo ""
-            echo "---"
-            echo "🧩 **Heap-Hop Edition Auto-Report**"
-            echo "Last Synced: $SYNC_DATE"
-            echo "Detected RustSpec: $RUST_VERSION"
-            echo "Mode: All is Heap (Go Executable)"
-            echo "Changes since last sync:"
-            sed 's/^/    /' proof/rust_diff.txt
-          } >> README.md
+            echo "### Heap-Hop Auto-Report (${ { matrix.os }})"
+            echo "- Last Synced: $SYNC_DATE"
+            echo "- Detected RustSpec: $RUST_VERSION"
+            echo "- Mode: All is Heap (Go Executable)"
+          } > "reports/readme_fragment-${{ matrix.os }}.md"
 
       - name: "🔐 Generate SHA256 Proof"
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p proof
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum build/* > proof/sha256sum-${{ matrix.os }}.txt
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sha256sum build/* > "proof/sha256sum-${{ matrix.os }}.txt"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            for f in build/*; do
+              shasum -a 256 "$f"
+            done > "proof/sha256sum-${{ matrix.os }}.txt"
           else
-            for file in build/*; do
-              certutil -hashfile "$file" SHA256 | findstr /V "certutil" >> "proof/sha256sum-${{ matrix.os }}.txt"
-            done
+            pwsh -NoLogo -NoProfile -Command 'Get-ChildItem build | ForEach-Object { $h = Get-FileHash $_.FullName -Algorithm SHA256; "$($h.Hash)  $($_.Name)" }' \
+              > "proof/sha256sum-${{ matrix.os }}.txt"
           fi
 
       - name: "📦 Archive Artifacts"
         shell: bash
         run: |
+          set -euo pipefail
+          PKG="go-like-rust-${{ matrix.os }}.zip"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            powershell Compress-Archive -Path build,proof,ledger,transpiled -DestinationPath go-like-rust-${{ matrix.os }}.zip
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path build,proof,ledger,transpiled -DestinationPath '$PKG' -Force"
           else
-            zip -r go-like-rust-${{ matrix.os }}.zip build proof ledger transpiled
+            zip -r "$PKG" build proof ledger transpiled
           fi
+          echo "$PKG" > artifact-name.txt
 
-      - name: "⬆️ Upload Build Artifacts"
+      - name: "⬆️ Upload Build Artifacts (zip)"
         uses: actions/upload-artifact@v4
         with:
           name: go-like-rust-${{ matrix.os }}
-          path: go-like-rust-${{ matrix.os }}.zip
+          path: |
+            go-like-rust-${{ matrix.os }}.zip
+            artifact-name.txt
+
+      - name: "⬆️ Upload Readme Fragment + Proof/Ledger (raw)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-proof-and-fragments-${{ matrix.os }}
+          path: |
+            reports/readme_fragment-${{ matrix.os }}.md
+            proof/**
+            ledger/**
 
   finalize:
     runs-on: ubuntu-latest
@@ -147,12 +172,55 @@ EOF
           pattern: "*"
           merge-multiple: true
 
+      - name: "📦 Unpack zips → staging"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          shopt -s nullglob
+          for z in release-assets/*.zip; do
+            unzip -o "$z" -d staging
+          done
+
+      - name: "🧾 Assemble README Update + Sync Proof/Ledger"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p proof ledger
+          # Merge proof/ledger from both raw artifacts and unzipped staging
+          rsync -a --ignore-existing release-assets/proof/ proof/ || true
+          rsync -a --ignore-existing release-assets/ledger/ ledger/ || true
+          rsync -a staging/proof/ proof/ || true
+          rsync -a staging/ledger/ ledger/ || true
+
+          # Build consolidated README fragment
+          {
+            echo ""
+            echo "---"
+            echo "## 🧩 Heap-Hop Edition Auto-Report (Consolidated)"
+            echo "- Finalized: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "- Runners: ubuntu-latest, macos-latest, windows-latest"
+            echo ""
+            for f in release-assets/reports/readme_fragment-*.md; do
+              echo ""
+              echo "#### Fragment: $(basename "$f")"
+              sed 's/^/    /' "$f"
+            done
+            echo ""
+            echo "### SHA256 Sums"
+            for s in proof/sha256sum-*.txt; do
+              echo ""
+              echo "#### $(basename "$s")"
+              sed 's/^/    /' "$s"
+            done
+          } >> README.md
+
       - name: "🧾 Commit & Push README + ProofLedger"
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
           git add README.md proof ledger || true
           git commit -m "📘 Auto-update README + Heap-Hop Executable ProofLedger" || echo "No changes to commit"
           git push
