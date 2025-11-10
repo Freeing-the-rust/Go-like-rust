@@ -69,11 +69,11 @@ jobs:
         shell: bash
         run: |
           cat <<'EOF' > README.md
-## 🏛️ Go-like-Rust Transpiler — *Heap-Hop Edition (v3.8-14 / 3OS Release)*
+          ## 🏛️ Go-like-Rust Transpiler — *Heap-Hop Edition (v3.8-14 / 3OS Release)*
 
-**All is heap, heap-hop.**
-3OS 자동 빌드 및 ProofLedger 검증 버전입니다.
-EOF
+          **All is heap, heap-hop.**
+          3OS 자동 빌드 및 ProofLedger 검증 버전입니다.
+          EOF
 
       - name: "🧾 Commit & Push Changes"
         shell: bash
