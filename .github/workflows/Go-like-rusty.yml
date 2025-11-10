@@ -30,7 +30,8 @@ jobs:
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             sudo apt-get update && sudo apt-get install -y git zip
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            brew update && brew install git
+            # ⚙️ Skip brew update to avoid migration hang
+            brew install --quiet git || true
           else
             choco install git -y
           fi
