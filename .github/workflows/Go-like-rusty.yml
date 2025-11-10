@@ -30,10 +30,11 @@ jobs:
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             sudo apt-get update && sudo apt-get install -y git zip
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            # ⚙️ Skip brew update to avoid migration hang
+            # Homebrew 마이그레이션 충돌 피하기 위해 update 생략
             brew install --quiet git || true
           else
-            choco install git -y
+            echo "Using preinstalled Git on Windows runner"
+            git --version || { echo "Git not found on PATH"; exit 1; }
           fi
 
       - name: "🏗️ Build Transpiler Snapshot"
@@ -46,6 +47,7 @@ jobs:
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum ledger/build-info-${{ matrix.os }}.txt > proof/sha256sum-${{ matrix.os }}.txt
           else
+            # Windows: certutil 사용
             certutil -hashfile "ledger\\build-info-${{ matrix.os }}.txt" SHA256 > "proof\\sha256sum-${{ matrix.os }}.txt"
           fi
 
