@@ -1,4 +1,4 @@
-name: 🏛️ Go-like-Rust Transpiler (v3.3 — 3OS Independent Releases + Stats)
+name: 🏛️ Go-like-Rust Transpiler (v3.5 — 3OS Release + Auto README Update)
 
 on:
   push:
@@ -23,29 +23,33 @@ jobs:
 
     steps:
       # ---------------------------------------------------------
-      - name: 🧭 Checkout
+      - name: 🧭 Checkout repository (OS-safe)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: false
+        shell: pwsh
 
+      # ---------------------------------------------------------
       - name: ⚙️ Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
 
-      - name: ⚙️ Prepare Env
+      - name: ⚙️ Prepare Environment
         shell: bash
         run: |
           mkdir -p "$BUILD_DIR" "$LEDGER_DIR"
-          echo "System: ${{ matrix.os }}"
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then sudo apt-get update -y && sudo apt-get install -y gnuplot; fi
+          echo "🏁 Runner: ${{ matrix.os }}"
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            sudo apt-get update -y && sudo apt-get install -y gnuplot
+          fi
 
       # ---------------------------------------------------------
-      - name: 🏗️ Build Go-like-Rust (OS-specific)
+      - name: 🏗️ Build Go-like-Rust
         id: build
         shell: bash
         run: |
-          echo "🏗️ Building for ${{ matrix.os }}"
           go mod tidy
           GOOS=$(echo "${{ matrix.os }}" | cut -d'-' -f1)
           EXT=""
@@ -61,17 +65,19 @@ jobs:
 
       # ---------------------------------------------------------
       - name: 🧾 Record contributor ledger
+        shell: bash
         run: |
           AUTHOR="${{ github.actor }}"
           EMAIL=$(git log -1 --pretty=format:'%ae')
           TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          echo "[$TIMESTAMP] $AUTHOR <$EMAIL> — Built on ${{ matrix.os }}" >> "$LEDGER_DIR/contributor-ledger.txt"
+          echo "[$TIMESTAMP] $AUTHOR <$EMAIL> — built on ${{ matrix.os }}" >> "$LEDGER_DIR/contributor-ledger.txt"
 
       # ---------------------------------------------------------
-      - name: 📈 Contributor stats (Linux only)
+      - name: 📈 Contributor Stats (Linux only)
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: |
-          echo "👥 Stats generated — $(date -u)" > "$LEDGER_DIR/contributor-scores.txt"
+          echo "👥 Contributor Statistics — $(date -u)" > "$LEDGER_DIR/contributor-scores.txt"
           rm -f "$LEDGER_DIR/contributor-rank-data.txt"
           for email in $(git log --format='%ae' | sort | uniq); do
             chars=$(git log --author="$email" --pretty=tformat: --numstat | awk '{add+=$1} END {print add}')
@@ -79,39 +85,95 @@ jobs:
             printf "%-25s — %10d chars\n" "$name <$email>" "$chars" >> "$LEDGER_DIR/contributor-scores.txt"
             echo "$name $chars" >> "$LEDGER_DIR/contributor-rank-data.txt"
           done
-          if [ -s contributor-rank-data.txt ]; then
+          if [ -s "$LEDGER_DIR/contributor-rank-data.txt" ]; then
+            cd "$LEDGER_DIR"
             sort -k2 -nr contributor-rank-data.txt > rank-sorted.txt
             echo "set terminal svg size 900,400; \
                   set output 'contributor-rank.svg'; \
                   set title 'Go-like-Rust Contributor Ranking'; \
                   set style data histograms; \
                   set style fill solid; \
+                  set ylabel 'Characters Added'; \
+                  set xtics rotate by -25; \
                   plot 'rank-sorted.txt' using 2:xtic(1) title 'Char Count'" | gnuplot
           fi
+
+      # ---------------------------------------------------------
+      - name: 🥇 Extract Top3 Contributors (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        id: top3
+        shell: bash
+        run: |
+          cd "$LEDGER_DIR"
+          sort -k2 -nr contributor-rank-data.txt | head -n 3 > top3.txt
+          echo "top1=$(awk 'NR==1{print $1}' top3.txt)" >> $GITHUB_OUTPUT
+          echo "top2=$(awk 'NR==2{print $1}' top3.txt)" >> $GITHUB_OUTPUT
+          echo "top3=$(awk 'NR==3{print $1}' top3.txt)" >> $GITHUB_OUTPUT
+
+      # ---------------------------------------------------------
+      - name: 🧩 Auto-update README (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          STATUS="${{ steps.build.outputs.status }}"
+          STATUS_CLEAN=$(echo "$STATUS" | tr ' ' '_' | tr -d '[:punct:]')
+          BADGE="![Build](https://img.shields.io/badge/build-${STATUS_CLEAN}-blue.svg)"
+          COMMITS=$(git rev-list --count HEAD)
+          CONTRIBUTORS=$(git log --format='%aN' | sort -u | wc -l)
+          UPDATED=$(date -u '+%Y-%m-%d %H:%M UTC')
+          TOP1="${{ steps.top3.outputs.top1 }}"
+          TOP2="${{ steps.top3.outputs.top2 }}"
+          TOP3="${{ steps.top3.outputs.top3 }}"
+          GRAPH_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/${LEDGER_DIR}/contributor-rank.svg"
+
+          echo "🪶 Updating README..."
+          sed -i '/## 🏗️ Build Status/,$d' README.md 2>/dev/null || true
+          {
+            echo "# 🧩 Go-like-Rust Transpiler"
+            echo ""
+            echo "📊 **Commits:** $COMMITS 👥 **Contributors:** $CONTRIBUTORS 🕒 **Updated:** $UPDATED"
+            echo ""
+            echo "🏆 **Top Contributors:** 🥇 $TOP1 🥈 $TOP2 🥉 $TOP3"
+            echo ""
+            echo "## 🏗️ Build Status"
+            echo ""
+            echo "$BADGE"
+            echo ""
+            echo "## 🏆 Contributor Ranking"
+            echo ""
+            echo "![Contributor Rank Graph]($GRAPH_URL)"
+            echo ""
+            echo "_(Auto-generated by CI — per OS build, rank & stats)_"
+          } > README.md
+
+          git add README.md
+          git commit -m "📊 Auto-update README (stats + top3 + badge)" || echo "No changes"
+          git push origin main || true
 
       # ---------------------------------------------------------
       - name: 🌀 Create OS-specific release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           GOOS=$(echo "${{ matrix.os }}" | cut -d'-' -f1)
-          TAG="snapshot-${GOOS}-v3.3-${{ github.run_number }}"
-          TITLE="Go-like-Rust v3.3 — ${GOOS^} Build Snapshot"
-          NOTES="Independent release for $GOOS — built at $(date -u)"
+          TAG="snapshot-${GOOS}-v3.5-${{ github.run_number }}"
+          TITLE="Go-like-Rust v3.5 — ${GOOS^} Release Snapshot"
+          NOTES="Independent release for $GOOS — build completed at $(date -u)"
           echo "🌀 Creating $TITLE"
           gh release delete "$TAG" --yes || true
           gh release create "$TAG" \
             "$BUILD_DIR/gcrust-${GOOS}"* \
             "$LEDGER_DIR/contributor-ledger.txt" \
-            $([ "$GOOS" = "linux" ] && echo "$LEDGER_DIR/contributor-scores.txt $LEDGER_DIR/contributor-rank.svg") \
+            $([ "$GOOS" = "linux" ] && echo "$LEDGER_DIR/contributor-scores.txt $LEDGER_DIR/contributor-rank.svg $LEDGER_DIR/top3.txt") \
             --title "$TITLE" \
             --notes "$NOTES" || true
 
       # ---------------------------------------------------------
-      - name: 📦 Upload artifact
+      - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gcrust-${{ matrix.os }}-v3.3-${{ github.run_number }}
+          name: gcrust-${{ matrix.os }}-v3.5-${{ github.run_number }}
           path: |
             $BUILD_DIR/
             $LEDGER_DIR/
