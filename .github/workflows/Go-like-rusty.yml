@@ -11,7 +11,10 @@ on:
 
 permissions:
   contents: write
-  actions: write
+
+concurrency:
+  group: go-like-rust-heap-hop-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-3os:
@@ -23,11 +26,20 @@ jobs:
     steps:
       - name: "🧭 Checkout Repository"
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "🔧 Normalize line endings (avoid CRLF in scripts)"
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
 
       - name: "⚙️ Setup Go Environment"
         uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+          check-latest: true
 
       - name: "🏗️ Transpile Rust → Go (All is Heap Mode)"
         shell: bash
@@ -36,61 +48,62 @@ jobs:
           mkdir -p build transpiled proof ledger
           echo "⚙️ Translating Rust to Go-like heap-based code..."
           if [ -f scripts/translate_rust_to_go.py ]; then
-            bash -c '(python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go'
+            (python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go
           else
-            cat > transpiled/main.go <<-'EOF'
-	package main
-
-	import (
-		"bufio"
-		"fmt"
-		"os"
-	)
-
-	func main() {
-		fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")
-		fmt.Println("Every value lives on the heap.")
-		fmt.Println()
-		fmt.Println("Press ENTER to exit (Heap-Hop).")
-
-		reader := bufio.NewReader(os.Stdin)
-		_, _ = reader.ReadBytes('\n')
-	}
-	EOF
+            printf '%s\n' \
+'package main' \
+'' \
+'import (' \
+'	"bufio"' \
+'	"fmt"' \
+'	"os"' \
+')' \
+'' \
+'func main() {' \
+'	fmt.Println("🏛️ All is heap — Heap-Hop Edition running.")' \
+'	fmt.Println("Every value lives on the heap.")' \
+'	fmt.Println()' \
+'	fmt.Println("Press ENTER to exit (Heap-Hop).")' \
+'' \
+'	reader := bufio.NewReader(os.Stdin)' \
+"	_, _ = reader.ReadBytes('\n')" \
+'}' > transpiled/main.go
           fi
           echo "✅ Transpilation complete — all heap variables, no stack life."
 
       - name: "🔨 Build Go Executable"
         shell: bash
+        env:
+          CGO_ENABLED: "0"
         run: |
           set -euo pipefail
           cd transpiled
           case "${RUNNER_OS}" in
-            Linux)  GOOS_NAME="linux" ;;
-            macOS)  GOOS_NAME="darwin" ;;
+            Linux)   GOOS_NAME="linux"   ;;
+            macOS)   GOOS_NAME="darwin"  ;;
             Windows) GOOS_NAME="windows" ;;
-            *) GOOS_NAME="generic" ;;
+            *)       GOOS_NAME="generic" ;;
           esac
+
           OUT="../build/go_like_rust_${GOOS_NAME}"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            go build -trimpath -ldflags="-s -w" -o "${OUT}.exe" main.go
+            go build -trimpath -buildvcs=false -ldflags="-s -w" -o "${OUT}.exe" main.go
           else
-            go build -trimpath -ldflags="-s -w" -o "${OUT}" main.go
+            go build -trimpath -buildvcs=false -ldflags="-s -w" -o "${OUT}" main.go
           fi
           cd ..
-          echo "✅ Build complete on $(date -u)" > ledger/build-info-${GOOS_NAME}.txt
-          echo "$(git config user.name || echo 'unknown') <$(git config user.email || echo 'unknown')> — heap-built on ${GOOS_NAME}" > ledger/contributor-ledger-${GOOS_NAME}.txt
+          date -u +"✅ Build complete on %Y-%m-%dT%H:%M:%SZ" > ledger/build-info-${GOOS_NAME}.txt
+          printf "%s\n" "$(git config user.name || echo 'unknown') <$(git config user.email || echo 'unknown')> — heap-built on ${GOOS_NAME}" > ledger/contributor-ledger-${GOOS_NAME}.txt
 
       - name: "🔐 Generate SHA256 Proof"
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p proof
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sha256sum build/* > proof/sha256sum-${{ matrix.os }}.txt
+            sha256sum build/* > "proof/sha256sum-${{ matrix.os }}.txt"
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            for f in build/*; do
-              shasum -a 256 "$f"
-            done > proof/sha256sum-${{ matrix.os }}.txt
+            for f in build/*; do shasum -a 256 "$f"; done > "proof/sha256sum-${{ matrix.os }}.txt"
           else
             pwsh -NoLogo -NoProfile -Command 'Get-ChildItem build | ForEach-Object { $h = Get-FileHash $_.FullName -Algorithm SHA256; "$($h.Hash)  $($_.Name)" }' > "proof/sha256sum-${{ matrix.os }}.txt"
           fi
@@ -98,12 +111,12 @@ jobs:
       - name: "📦 Archive Artifacts"
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           ZIP="go-like-rust-${{ matrix.os }}.zip"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path build,proof,ledger,transpiled -DestinationPath '$ZIP' -Force"
           else
-            zip -r "$ZIP" build proof ledger transpiled
+            zip -rq "$ZIP" build proof ledger transpiled
           fi
 
       - name: "⬆️ Upload Build Artifacts"
@@ -111,6 +124,8 @@ jobs:
         with:
           name: go-like-rust-${{ matrix.os }}
           path: go-like-rust-${{ matrix.os }}.zip
+          if-no-files-found: error
+          retention-days: 7
 
   finalize:
     runs-on: ubuntu-latest
@@ -119,6 +134,8 @@ jobs:
     steps:
       - name: "🧭 Checkout Repository"
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: "📥 Download All Artifacts"
         uses: actions/download-artifact@v4
@@ -127,14 +144,33 @@ jobs:
           pattern: "*"
           merge-multiple: true
 
+      - name: "📦 Extract proof/ledger from artifacts"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p proof ledger
+          shopt -s nullglob
+          for z in release-assets/*.zip; do
+            tmpdir=$(mktemp -d)
+            unzip -q "$z" "proof/*" "ledger/*" -d "$tmpdir" || true
+            if [ -d "$tmpdir/proof" ];  then rsync -a "$tmpdir/proof/"  proof/;  fi
+            if [ -d "$tmpdir/ledger" ]; then rsync -a "$tmpdir/ledger/" ledger/; fi
+            rm -rf "$tmpdir"
+          done
+          # 리스트 확인용 간단 출력
+          echo "::group::Proof files"; ls -l proof || true; echo "::endgroup::"
+          echo "::group::Ledger files"; ls -l ledger || true; echo "::endgroup::"
+
       - name: "🧾 Commit & Push README + ProofLedger"
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase || true
+          mkdir -p proof ledger
           git add README.md proof ledger || true
-          git commit -m "📘 Auto-update README + Heap-Hop Executable ProofLedger" || echo "No changes to commit"
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "📘 Auto-update README + Heap-Hop Executable ProofLedger"
           git push
 
       - name: "🚀 Create or Update Release"
@@ -143,11 +179,11 @@ jobs:
           tag_name: "heap-hop-v4.8"
           name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler)"
           body: |
-            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.8)**  
-            ✅ Rust → Go 기반 Heap 모드 실행파일 릴리즈  
-            🦀 RustSpec 참조 + Heap-Hop Philosophy 반영  
-            🔐 ProofLedger + SHA256 해시 포함  
-            ⚙️ Everything lives on the heap.  
+            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.8)**
+            ✅ Rust → Go 기반 Heap 모드 실행파일 릴리즈
+            🦀 RustSpec 참조 + Heap-Hop Philosophy 반영
+            🔐 ProofLedger + SHA256 해시 포함
+            ⚙️ Everything lives on the heap.
             **All is heap, heap-hop.**
           files: release-assets/*.zip
         env:
