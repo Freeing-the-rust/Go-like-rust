@@ -102,17 +102,18 @@ EOF
             echo "Detected RustSpec: $RUST_VERSION"
             echo "Mode: All is Heap (Go Executable)"
             echo "Changes since last sync:"
-            cat proof/rust_diff.txt | sed 's/^/    /'
+            sed 's/^/    /' proof/rust_diff.txt
           } >> README.md
 
       - name: "🔐 Generate SHA256 Proof"
         shell: bash
         run: |
+          mkdir -p proof
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum build/* > proof/sha256sum-${{ matrix.os }}.txt
           else
             for file in build/*; do
-              certutil -hashfile "$file" SHA256 | findstr /V "certutil" >> proof\\sha256sum-${{ matrix.os }}.txt
+              certutil -hashfile "$file" SHA256 | findstr /V "certutil" >> "proof/sha256sum-${{ matrix.os }}.txt"
             done
           fi
 
