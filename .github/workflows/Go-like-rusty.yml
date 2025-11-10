@@ -1,4 +1,4 @@
-name: 🏭 Go-like-Rust Transpiler (v2.3 — Fail-Safe Release Edition)
+name: 🏛️ Go-like-Rust Transpiler (v2.4 — Foundation Edition)
 
 on:
   push:
@@ -108,7 +108,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$BUILD_DIR"/* "$LEDGER_DIR"/* diff/* proof_history/* || true
-          git commit -m "🏭 v2.3 ProofLedger + Diff update" || echo "No changes to commit"
+          git commit -m "🏛️ v2.4 ProofLedger + Diff update" || echo "No changes to commit"
           git push origin main || echo "✅ No push needed"
 
       # ---------------------------------------------------------
@@ -126,7 +126,7 @@ jobs:
           fi
 
           gh release create "$SNAPSHOT_TAG" $FILES "$GITHUB_WORKSPACE/$LEDGER_DIR"/ProofLedger.txt diff/ProofLedgerDiff.txt \
-            --title "Go-like-Rust Transpile Snapshot v2.3" \
+            --title "Go-like-Rust Transpile Snapshot v2.4" \
             --notes "Automated transpile + verification — $(date -u)" || echo "⚠️ Release creation failed (non-fatal)"
 
       # ---------------------------------------------------------
@@ -160,10 +160,51 @@ jobs:
           fi
 
       # ---------------------------------------------------------
+      - name: 👥 Update Contributors section in README
+        run: |
+          echo "🔍 Collecting contributors..."
+          CONTRIBUTORS=$(git log --format='%aN <%aE>' | sort | uniq)
+          if ! grep -q "## 👥 Contributors" README.md 2>/dev/null; then
+            echo "" >> README.md
+            echo "## 👥 Contributors" >> README.md
+          else
+            sed -i '/## 👥 Contributors/,$d' README.md
+            echo "## 👥 Contributors" >> README.md
+          fi
+          echo "" >> README.md
+          echo "$CONTRIBUTORS" | awk '{print "- " $0}' >> README.md
+          echo "" >> README.md
+          echo "_(This list is automatically updated by CI)_" >> README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "👥 Auto-update contributors section in README" || echo "No changes"
+          git push origin main || echo "✅ No push needed"
+
+      # ---------------------------------------------------------
+      - name: 🧾 Update AUTHORS.md
+        run: |
+          if [ ! -f AUTHORS.md ]; then
+            echo "# 👥 Contributors" > AUTHORS.md
+            echo "" >> AUTHORS.md
+          fi
+          AUTHOR_NAME="${{ github.actor }}"
+          AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
+          ENTRY="- ${AUTHOR_NAME} <${AUTHOR_EMAIL}>"
+          if ! grep -q "${AUTHOR_NAME}" AUTHORS.md; then
+            echo "$ENTRY" >> AUTHORS.md
+            git add AUTHORS.md
+            git commit -m "🤝 Add contributor ${AUTHOR_NAME}" || echo "No changes"
+            git push origin main || echo "✅ No push needed"
+          else
+            echo "✅ Contributor already listed."
+          fi
+
+      # ---------------------------------------------------------
       - name: 📦 Upload artifacts (proof + diff)
         uses: actions/upload-artifact@v4
         with:
-          name: transpile-proof-v2.3-${{ github.run_number }}
+          name: transpile-proof-v2.4-${{ github.run_number }}
           path: |
             $BUILD_DIR/
             $LEDGER_DIR/
