@@ -1,4 +1,4 @@
-name: 🏛️ Go-like-Rust Transpiler (v3.5 — 3OS Release + Auto README Update)
+name: 🏛️ Go-like-Rust Transpiler (v3.6 — 3OS Stable Release + Auto README Update)
 
 on:
   push:
@@ -28,7 +28,12 @@ jobs:
         with:
           fetch-depth: 0
           submodules: false
+
+      - name: 🧹 Ensure Windows safe path (only Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
+        run: |
+          git config --system core.longpaths true
 
       # ---------------------------------------------------------
       - name: ⚙️ Setup Go
@@ -157,8 +162,8 @@ jobs:
         shell: bash
         run: |
           GOOS=$(echo "${{ matrix.os }}" | cut -d'-' -f1)
-          TAG="snapshot-${GOOS}-v3.5-${{ github.run_number }}"
-          TITLE="Go-like-Rust v3.5 — ${GOOS^} Release Snapshot"
+          TAG="snapshot-${GOOS}-v3.6-${{ github.run_number }}"
+          TITLE="Go-like-Rust v3.6 — ${GOOS^} Release Snapshot"
           NOTES="Independent release for $GOOS — build completed at $(date -u)"
           echo "🌀 Creating $TITLE"
           gh release delete "$TAG" --yes || true
@@ -173,7 +178,7 @@ jobs:
       - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gcrust-${{ matrix.os }}-v3.5-${{ github.run_number }}
+          name: gcrust-${{ matrix.os }}-v3.6-${{ github.run_number }}
           path: |
             $BUILD_DIR/
             $LEDGER_DIR/
