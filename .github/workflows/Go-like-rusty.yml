@@ -1,10 +1,12 @@
-name: 🏛️ Go-like-Rust Transpiler (v2.4 — Foundation Edition)
+name: 🏛️ Go-like-Rust Transpiler (v2.9 — Foundation with README Rank Embed Edition)
 
 on:
   push:
     branches: [main]
+  pull_request:
+    types: [closed]
   schedule:
-    - cron: "0 0 * * *"     # 매일 자정 UTC
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 permissions:
@@ -21,192 +23,104 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------------------------------------------------
       - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ---------------------------------------------------------
-      - name: ⚙️ Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.23.x"
-
-      # ---------------------------------------------------------
-      - name: 🧾 Ensure Go module
+      - name: ⚙️ Setup environment
         run: |
-          if [ ! -f go.mod ]; then
-            echo "Initializing Go module (gcrust)"
-            go mod init gcrust
-          fi
-          go mod tidy
-
-      # ---------------------------------------------------------
-      - name: 🧩 Prepare directories
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/$BUILD_DIR" "$GITHUB_WORKSPACE/$LEDGER_DIR" diff proof_history
-
-      # ---------------------------------------------------------
-      - name: 🦀 Transpile Rust-like sources
-        run: |
-          echo "=== Go-like-Rust Transpile Run ($(date -u)) ==="
-          for f in $(find examples -name '*.rs' 2>/dev/null); do
-            echo "➡️  Transpiling: $f"
-            go run main.go transpile "$f" || echo "⚠️ Transpile failed for $f"
-          done
-          find examples -name '*_gen.go' -exec cp {} "$GITHUB_WORKSPACE/$BUILD_DIR" \; || true
-
-      # ---------------------------------------------------------
-      - name: 🧪 Run transpiled outputs
-        run: |
-          for g in $(find "$GITHUB_WORKSPACE/$BUILD_DIR" -name '*_gen.go' 2>/dev/null); do
-            echo "▶️ Running: $g"
-            go run "$g" || echo "⚠️ Run failed: $g"
-          done
-          echo "✅ Execution checks complete"
-
-      # ---------------------------------------------------------
-      - name: 🔒 Generate ProofLedger
-        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gnuplot
           mkdir -p "$GITHUB_WORKSPACE/$LEDGER_DIR"
-          cd "$GITHUB_WORKSPACE/$BUILD_DIR" || exit 0
 
-          FILES=$(ls *_gen.go 2>/dev/null || true)
-          if [ -n "$FILES" ]; then
-            sha256sum *_gen.go > "$GITHUB_WORKSPACE/$LEDGER_DIR/SHA256SUMS.txt"
+      # ---------------------------------------------------------
+      - name: 🧾 Record contributor ledger
+        run: |
+          AUTHOR="${{ github.actor }}"
+          EMAIL=$(git log -1 --pretty=format:'%ae')
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          echo "[$TIMESTAMP] $AUTHOR <$EMAIL>" >> "$LEDGER_DIR/contributor-ledger.txt"
+          echo "✅ Contributor ledger updated with $AUTHOR"
+
+      # ---------------------------------------------------------
+      - name: 🧮 Calculate character-based contribution scores
+        run: |
+          echo "👥 Character-Based Contribution Scores — $(date -u)" > "$LEDGER_DIR/contributor-scores.txt"
+          echo "" >> "$LEDGER_DIR/contributor-scores.txt"
+
+          rm -f "$LEDGER_DIR/contributor-rank-data.txt"
+          for email in $(git log --format='%ae' | sort | uniq); do
+            total_chars=$(git log --author="$email" --pretty=tformat: --numstat | awk '{add+=$1} END {print add}')
+            name=$(git log --author="$email" --pretty="%aN" | head -n 1)
+            [ -z "$total_chars" ] && total_chars=0
+            printf "%-25s — %10d chars\n" "$name <$email>" "$total_chars" >> "$LEDGER_DIR/contributor-scores.txt"
+            echo "$name $total_chars" >> "$LEDGER_DIR/contributor-rank-data.txt"
+          done
+
+          echo "" >> "$LEDGER_DIR/contributor-scores.txt"
+          echo "_(Character count = total added characters across commits)_" >> "$LEDGER_DIR/contributor-scores.txt"
+          echo "✅ Contributor character scores updated"
+
+      # ---------------------------------------------------------
+      - name: 📈 Generate contributor rank SVG
+        run: |
+          cd "$LEDGER_DIR"
+          if [ -s contributor-rank-data.txt ]; then
+            sort -k2 -nr contributor-rank-data.txt > rank-sorted.txt
+            echo "set terminal svg size 800,400; \
+                  set output 'contributor-rank.svg'; \
+                  set title 'Go-like-Rust Contributor Ranking'; \
+                  set style data histograms; \
+                  set style fill solid; \
+                  set ylabel 'Characters Added'; \
+                  set xtics rotate by -25; \
+                  plot 'rank-sorted.txt' using 2:xtic(1) title 'Char Count'" | gnuplot
+            echo "✅ SVG graph generated at proof/contributor-rank.svg"
           else
-            echo "No generated Go files found." > "$GITHUB_WORKSPACE/$LEDGER_DIR/SHA256SUMS.txt"
+            echo "⚠️ No rank data found, skipping SVG."
           fi
 
-          cd "$GITHUB_WORKSPACE/$LEDGER_DIR"
-          {
-            echo "GO-LIKE-RUST TRANSPILER PROOFLEDGER — $(date -u)"
-            echo "Generated Files: $(ls $GITHUB_WORKSPACE/$BUILD_DIR | wc -l)"
-            echo "UTC Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            cat SHA256SUMS.txt
-          } > ProofLedger.txt
-          echo "✅ ProofLedger generated"
-
       # ---------------------------------------------------------
-      - name: 🔍 Compare with previous ledger (ProofLedgerDiff)
+      - name: 🧩 Embed rank graph into README
         run: |
-          mkdir -p diff proof_history
-          PREV=$(ls proof_history/ProofLedger-*.txt 2>/dev/null | tail -n 1 || true)
-          if [ -n "$PREV" ]; then
-            diff -u "$PREV" "$GITHUB_WORKSPACE/$LEDGER_DIR/ProofLedger.txt" > diff/ProofLedgerDiff.txt || true
+          GRAPH_PATH="proof/contributor-rank.svg"
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/${GRAPH_PATH}"
+          if [ -f "$GRAPH_PATH" ]; then
+            echo "🪶 Embedding rank graph into README"
+            # 기존 그래프 섹션 삭제
+            sed -i '/## 🏆 Contributor Ranking/,$d' README.md 2>/dev/null || true
+            echo "" >> README.md
+            echo "## 🏆 Contributor Ranking" >> README.md
+            echo "" >> README.md
+            echo "![Contributor Rank Graph]($RAW_URL)" >> README.md
+            echo "" >> README.md
+            echo "_(This graph is auto-generated by CI — updated on every push)_" >> README.md
+            git add README.md
+            git commit -m "🏆 Auto-embed contributor rank graph in README" || echo "No changes"
+            git push origin main || echo "✅ No push needed"
           else
-            echo "No previous ProofLedger found" > diff/ProofLedgerDiff.txt
+            echo "⚠️ No SVG graph found; skipping embed."
           fi
-          cp "$GITHUB_WORKSPACE/$LEDGER_DIR/ProofLedger.txt" "proof_history/ProofLedger-$(date -u +%Y%m%d-%H%M).txt" || true
-          echo "✅ ProofLedgerDiff updated"
 
       # ---------------------------------------------------------
-      - name: 🧾 Commit & Push ledger + generated code
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$BUILD_DIR"/* "$LEDGER_DIR"/* diff/* proof_history/* || true
-          git commit -m "🏛️ v2.4 ProofLedger + Diff update" || echo "No changes to commit"
-          git push origin main || echo "✅ No push needed"
-
-      # ---------------------------------------------------------
-      - name: 🌀 Create snapshot release (fail-safe)
+      - name: 🌀 Create release (with graph)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "🌀 Creating release: $SNAPSHOT_TAG"
           gh release delete "$SNAPSHOT_TAG" --yes || true
-
-          FILES=$(find "$GITHUB_WORKSPACE/$BUILD_DIR" -name '*.go' 2>/dev/null)
-          if [ -z "$FILES" ]; then
-            echo "⚠️ No transpiled .go files found — skipping release creation."
-            exit 0
-          fi
-
-          gh release create "$SNAPSHOT_TAG" $FILES "$GITHUB_WORKSPACE/$LEDGER_DIR"/ProofLedger.txt diff/ProofLedgerDiff.txt \
-            --title "Go-like-Rust Transpile Snapshot v2.4" \
-            --notes "Automated transpile + verification — $(date -u)" || echo "⚠️ Release creation failed (non-fatal)"
+          gh release create "$SNAPSHOT_TAG" \
+            "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-ledger.txt" \
+            "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-scores.txt" \
+            "$GITHUB_WORKSPACE/$LEDGER_DIR/contributor-rank.svg" \
+            --title "Go-like-Rust Snapshot v2.9" \
+            --notes "Contributor rank visualization embedded in README — $(date -u)" || true
 
       # ---------------------------------------------------------
-      - name: 🌐 Mirror to backup repository (dual sync)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "🔁 Syncing to backup repository: $BACKUP_REPO"
-          git remote add backup "https://github.com/$BACKUP_REPO.git" || true
-          git push backup main || echo "⚠️ Backup sync failed (non-fatal)"
-
-      # ---------------------------------------------------------
-      - name: 🤝 Ensure README has contribution section
-        run: |
-          if ! grep -q "## 🤝 Contributing" README.md 2>/dev/null; then
-            echo "" >> README.md
-            echo "## 🤝 Contributing" >> README.md
-            echo "Contributions are welcome!" >> README.md
-            echo "" >> README.md
-            echo "If you'd like to improve Go-like-Rust, open a Pull Request." >> README.md
-            echo "" >> README.md
-            echo "_(This section was automatically added by CI)_" >> README.md
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "🤝 Auto-add contribution section to README" || echo "No changes"
-            git push origin main || echo "✅ No push needed"
-          else
-            echo "✅ README already has a contribution section."
-          fi
-
-      # ---------------------------------------------------------
-      - name: 👥 Update Contributors section in README
-        run: |
-          echo "🔍 Collecting contributors..."
-          CONTRIBUTORS=$(git log --format='%aN <%aE>' | sort | uniq)
-          if ! grep -q "## 👥 Contributors" README.md 2>/dev/null; then
-            echo "" >> README.md
-            echo "## 👥 Contributors" >> README.md
-          else
-            sed -i '/## 👥 Contributors/,$d' README.md
-            echo "## 👥 Contributors" >> README.md
-          fi
-          echo "" >> README.md
-          echo "$CONTRIBUTORS" | awk '{print "- " $0}' >> README.md
-          echo "" >> README.md
-          echo "_(This list is automatically updated by CI)_" >> README.md
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git commit -m "👥 Auto-update contributors section in README" || echo "No changes"
-          git push origin main || echo "✅ No push needed"
-
-      # ---------------------------------------------------------
-      - name: 🧾 Update AUTHORS.md
-        run: |
-          if [ ! -f AUTHORS.md ]; then
-            echo "# 👥 Contributors" > AUTHORS.md
-            echo "" >> AUTHORS.md
-          fi
-          AUTHOR_NAME="${{ github.actor }}"
-          AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
-          ENTRY="- ${AUTHOR_NAME} <${AUTHOR_EMAIL}>"
-          if ! grep -q "${AUTHOR_NAME}" AUTHORS.md; then
-            echo "$ENTRY" >> AUTHORS.md
-            git add AUTHORS.md
-            git commit -m "🤝 Add contributor ${AUTHOR_NAME}" || echo "No changes"
-            git push origin main || echo "✅ No push needed"
-          else
-            echo "✅ Contributor already listed."
-          fi
-
-      # ---------------------------------------------------------
-      - name: 📦 Upload artifacts (proof + diff)
+      - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: transpile-proof-v2.4-${{ github.run_number }}
+          name: contributor-rank-v2.9-${{ github.run_number }}
           path: |
-            $BUILD_DIR/
             $LEDGER_DIR/
-            diff/
-            proof_history/
