@@ -1,4 +1,4 @@
-name: "🏛️ Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.8 / Go Executable Release)"
+name: "🏛️ Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.9 / Go Executable Release)"
 
 on:
   push:
@@ -41,6 +41,16 @@ jobs:
           go-version: "1.23"
           check-latest: true
 
+      - name: "⚡ Cache Go Modules"
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: "🏗️ Transpile Rust → Go (All is Heap Mode)"
         shell: bash
         run: |
@@ -48,8 +58,10 @@ jobs:
           mkdir -p build transpiled proof ledger
           echo "⚙️ Translating Rust to Go-like heap-based code..."
           if [ -f scripts/translate_rust_to_go.py ]; then
+            echo "✅ Found Python transpiler — executing..."
             (python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go
           else
+            echo "⚠️ No transpiler found — using fallback demo Go file."
             printf '%s\n' \
 'package main' \
 '' \
@@ -69,7 +81,7 @@ jobs:
 "	_, _ = reader.ReadBytes('\n')" \
 '}' > transpiled/main.go
           fi
-          echo "✅ Transpilation complete — all heap variables, no stack life."
+          echo "✅ Transpilation complete — heap-only structure established."
 
       - name: "🔨 Build Go Executable"
         shell: bash
@@ -92,7 +104,11 @@ jobs:
             go build -trimpath -buildvcs=false -ldflags="-s -w" -o "${OUT}" main.go
           fi
           cd ..
-          date -u +"✅ Build complete on %Y-%m-%dT%H:%M:%SZ" > ledger/build-info-${GOOS_NAME}.txt
+          {
+            date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
+            echo "Commit Hash: $(git rev-parse HEAD)"
+            echo "Runner OS: ${RUNNER_OS}"
+          } > ledger/build-info-${GOOS_NAME}.txt
           printf "%s\n" "$(git config user.name || echo 'unknown') <$(git config user.email || echo 'unknown')> — heap-built on ${GOOS_NAME}" > ledger/contributor-ledger-${GOOS_NAME}.txt
 
       - name: "🔐 Generate SHA256 Proof"
@@ -100,13 +116,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p proof
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sha256sum build/* > "proof/sha256sum-${{ matrix.os }}.txt"
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            for f in build/*; do shasum -a 256 "$f"; done > "proof/sha256sum-${{ matrix.os }}.txt"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh -NoLogo -NoProfile -Command 'Get-ChildItem build | ForEach-Object { $h = Get-FileHash $_.FullName -Algorithm SHA256; "$($h.Hash)  $($_.Name)" }' | Sort-Object > "proof/sha256sum-${{ matrix.os }}.txt"
           else
-            pwsh -NoLogo -NoProfile -Command 'Get-ChildItem build | ForEach-Object { $h = Get-FileHash $_.FullName -Algorithm SHA256; "$($h.Hash)  $($_.Name)" }' > "proof/sha256sum-${{ matrix.os }}.txt"
+            find build -type f -exec shasum -a 256 "{}" \; | sort > "proof/sha256sum-${{ matrix.os }}.txt"
           fi
+          echo "✅ SHA256 proof generated (sorted for deterministic comparison)."
 
       - name: "📦 Archive Artifacts"
         shell: bash
@@ -118,6 +133,7 @@ jobs:
           else
             zip -rq "$ZIP" build proof ledger transpiled
           fi
+          echo "✅ Artifact packaged: $ZIP"
 
       - name: "⬆️ Upload Build Artifacts"
         uses: actions/upload-artifact@v4
@@ -167,10 +183,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase || true
-          echo "" >> README.md
-          echo "### 🌍 Main Branch Open" >> README.md
-          echo "본 프로젝트의 main 브랜치는 오픈 상태이며, 누구나 PR 또는 Issue로 기여할 수 있습니다." >> README.md
-          echo "" >> README.md
+          if ! grep -q "### 🌍 Main Branch Open" README.md; then
+            echo "" >> README.md
+            echo "### 🌍 Main Branch Open" >> README.md
+            echo "본 프로젝트의 main 브랜치는 오픈 상태이며, 누구나 PR 또는 Issue로 기여할 수 있습니다." >> README.md
+          fi
           git add README.md proof ledger || true
           git diff --cached --quiet && echo "No changes to commit" || git commit -m "🔓 Main branch open notice — Contributions welcome + Proof/Ledger sync"
           git push
@@ -178,10 +195,10 @@ jobs:
       - name: "🚀 Create or Update Release"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "heap-hop-v4.8"
+          tag_name: heap-hop-v${{ github.run_number }}
           name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler)"
           body: |
-            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.8)**
+            🏛️ **Go-like-Rust Transpiler — All is Heap (v4.9)**
             ✅ Rust → Go 기반 Heap 모드 실행파일 릴리즈
             🦀 RustSpec 참조 + Heap-Hop Philosophy 반영
             🔐 ProofLedger + SHA256 해시 포함
