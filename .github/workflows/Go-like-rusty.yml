@@ -52,7 +52,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      # ---------- Transpile (Linux/macOS) ----------
+      # Transpile (Linux/macOS)
       - name: Transpile Rust to Go (unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -86,7 +86,7 @@ EOF
           fi
           echo "Transpilation complete."
 
-      # ---------- Transpile (Windows, CRLF-safe) ----------
+      # Transpile (Windows, CRLF-safe)
       - name: Transpile Rust to Go (windows)
         if: runner.os == 'Windows'
         shell: pwsh
