@@ -1,4 +1,4 @@
-name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.9 / Go Executable Release)"
+name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.10 / Go Executable Release)"
 
 on:
   push:
@@ -59,33 +59,34 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build transpiled proof ledger
-          echo "Translating Rust to Go-like heap-based code..."
+          echo "⚙️ Translating Rust to Go-like heap-based code..."
           if [ -f scripts/translate_rust_to_go.py ]; then
             echo "Found Python transpiler — executing..."
             (python3 scripts/translate_rust_to_go.py src/ 2>/dev/null || python scripts/translate_rust_to_go.py src/) > transpiled/main.go
           else
             echo "No transpiler found — creating fallback Go file."
-            printf '%s\n' \
-'package main' \
-'' \
-'import (' \
-'	"bufio"' \
-'	"fmt"' \
-'	"os"' \
-')' \
-'' \
-'func main() {' \
-'	fmt.Println("All is heap — Heap-Hop Edition running.")' \
-'	fmt.Println("Every value lives on the heap.")' \
-'	fmt.Println("Press ENTER to exit.")' \
-'' \
-'	reader := bufio.NewReader(os.Stdin)' \
-'	_, _ = reader.ReadBytes('\''\n'\'')' \
-'}' > transpiled/main.go
-          fi
-          echo "Transpilation complete."
+            cat > transpiled/main.go <<'EOF'
+package main
 
-      # Transpile (Windows, CRLF-safe)
+import (
+	"bufio"
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println("All is heap — Heap-Hop Edition running.")
+	fmt.Println("Every value lives on the heap.")
+	fmt.Println("Press ENTER to exit.")
+
+	reader := bufio.NewReader(os.Stdin)
+	_, _ = reader.ReadBytes('\n')
+}
+EOF
+          fi
+          echo "✅ Transpilation complete."
+
+      # Transpile (Windows)
       - name: Transpile Rust to Go (windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -93,7 +94,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path build, transpiled, proof, ledger | Out-Null
-          Write-Host "Translating Rust to Go-like heap-based code..."
+          Write-Host "⚙️ Translating Rust to Go-like heap-based code..."
           if (Test-Path "scripts/translate_rust_to_go.py") {
             Write-Host "Found Python transpiler — executing..."
             $py = Get-Command python -ErrorAction SilentlyContinue
@@ -101,7 +102,7 @@ jobs:
             if ($py) {
               & $py.Source "scripts/translate_rust_to_go.py" "src/" | Out-File -FilePath "transpiled/main.go" -Encoding ascii
             } else {
-              Write-Host "Python not found — falling back to demo."
+              Write-Host "Python not found — fallback Go file."
               @'
 package main
 
@@ -142,35 +143,37 @@ func main() {
 }
 '@ | Out-File -FilePath "transpiled/main.go" -Encoding ascii
           }
-          Write-Host "Transpilation complete."
+          Write-Host "✅ Transpilation complete."
 
-      - name: Build Go Executable
+      - name: Build Go Executable (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         env:
           CGO_ENABLED: "0"
         run: |
           set -euo pipefail
           cd transpiled
-          case "${RUNNER_OS}" in
-            Linux)   GOOS_NAME="linux" ;;
-            macOS)   GOOS_NAME="darwin" ;;
-            Windows) GOOS_NAME="windows" ;;
-            *)       GOOS_NAME="generic" ;;
-          esac
-
+          GOOS_NAME=$(echo "${RUNNER_OS}" | tr '[:upper:]' '[:lower:]')
           OUT="../build/go_like_rust_${GOOS_NAME}"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            go build -trimpath -ldflags="-s -w" -o "${OUT}.exe" main.go
-          else
-            go build -trimpath -ldflags="-s -w" -o "${OUT}" main.go
-          fi
+          go build -trimpath -ldflags="-s -w" -o "${OUT}" main.go
           cd ..
           {
             date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
             echo "Commit Hash: $(git rev-parse HEAD)"
             echo "Runner OS: ${RUNNER_OS}"
           } > ledger/build-info-${GOOS_NAME}.txt
-          echo "$(git config user.name || echo 'unknown') <$(git config user.email || echo 'unknown')> — built on ${GOOS_NAME}" > ledger/contributor-ledger-${GOOS_NAME}.txt
+
+      - name: Build Go Executable (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          cd transpiled
+          go build -trimpath -ldflags="-s -w" -o "../build/go_like_rust_windows.exe" main.go
+          cd ..
+          Get-Date -Format "u" | Out-File "ledger/build-info-windows.txt"
+          "Commit Hash: $(git rev-parse HEAD)" | Out-File -Append "ledger/build-info-windows.txt"
 
       - name: Generate SHA256 Proof
         shell: bash
@@ -185,6 +188,9 @@ func main() {
             else
               find build -type f -exec shasum -a 256 "{}" \; | sort > "proof/sha256sum-${{ matrix.os }}.txt"
             fi
+          fi
+          if [ ! -s proof/sha256sum-${{ matrix.os }}.txt ]; then
+            echo "⚠️ Warning: No proof generated for ${{ matrix.os }}."
           fi
 
       - name: Archive Artifacts
@@ -232,8 +238,8 @@ func main() {
           for z in release-assets/*.zip; do
             tmpdir=$(mktemp -d)
             unzip -q "$z" "proof/*" "ledger/*" -d "$tmpdir" || true
-            if [ -d "$tmpdir/proof" ]; then cp -R "$tmpdir/proof/"* proof/ 2>/dev/null || true; fi
-            if [ -d "$tmpdir/ledger" ]; then cp -R "$tmpdir/ledger/"* ledger/ 2>/dev/null || true; fi
+            [ -d "$tmpdir/proof" ] && cp -R "$tmpdir/proof/"* proof/ 2>/dev/null || true
+            [ -d "$tmpdir/ledger" ] && cp -R "$tmpdir/ledger/"* ledger/ 2>/dev/null || true
             rm -rf "$tmpdir"
           done
 
@@ -258,10 +264,10 @@ func main() {
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: heap-hop-v${{ github.run_number }}
+          tag_name: heap-hop-${{ github.run_number }}-$(date +'%Y%m%d')
           name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler)"
           body: |
-            Go-like-Rust Transpiler — All is Heap (v4.9)
+            Go-like-Rust Transpiler — All is Heap (v4.10)
             ✅ Rust → Go heap mode executable release
             🔐 ProofLedger + SHA256 verification
             ⚙️ Everything lives on the heap.
