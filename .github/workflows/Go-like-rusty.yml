@@ -1,4 +1,4 @@
-name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.10.4 / Go Executable Release)"
+name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.10.5 / Go Executable Release)"
 
 on:
   push:
@@ -53,7 +53,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      # --- Transpile (Unix) ---
       - name: Transpile Rust to Go (unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -66,7 +65,7 @@ jobs:
             (python3 scripts/translate_rust_to_go.py src/ || python scripts/translate_rust_to_go.py src/ || true) > transpiled/main.go
           else
             echo "No transpiler found — fallback Go file."
-            cat > transpiled/main.go <<EOF
+            cat <<EOF > transpiled/main.go
 package main
 import (
   "bufio"
@@ -84,7 +83,6 @@ EOF
           fi
           echo "✅ Transpilation complete."
 
-      # --- Transpile (Windows) ---
       - name: Transpile Rust to Go (windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -137,7 +135,6 @@ func main() {
           }
           Write-Host "✅ Transpilation complete."
 
-      # --- Build Go Executable ---
       - name: Build Go Executable
         shell: bash
         run: |
@@ -149,13 +146,12 @@ func main() {
           go build -trimpath -ldflags="-s -w" -o "${OUT}" main.go
           cd ..
           {
-            echo "Version: v4.10.4"
+            echo "Version: v4.10.5"
             date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
             echo "Commit Hash: $(git rev-parse HEAD)"
             echo "Runner OS: ${RUNNER_OS}"
           } > ledger/build-info-${GOOS_NAME}.txt
 
-      # --- Generate SHA256 Proof ---
       - name: Generate SHA256 Proof
         shell: bash
         run: |
@@ -171,7 +167,6 @@ func main() {
             fi
           fi
 
-      # --- Archive Artifacts ---
       - name: Archive Artifacts
         shell: bash
         run: |
@@ -192,7 +187,6 @@ func main() {
           if-no-files-found: error
           retention-days: 7
 
-  # --- Finalize / Merge ProofLedger / Release ---
   finalize:
     runs-on: ubuntu-latest
     needs: build-3os
@@ -236,7 +230,7 @@ func main() {
             } >> README.md
           fi
           git add README.md proof ledger || true
-          git diff --cached --quiet || git commit -m "Main branch open notice + Proof/Ledger sync (v4.10.4)"
+          git diff --cached --quiet || git commit -m "Main branch open notice + Proof/Ledger sync (v4.10.5)"
           git push
 
       - name: Compute date for tag
@@ -248,9 +242,9 @@ func main() {
         uses: softprops/action-gh-release@v2
         with:
           tag_name: heap-hop-${{ github.run_number }}-${{ steps.dates.outputs.utc_date }}
-          name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler v4.10.4)"
+          name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler v4.10.5)"
           body: |
-            Go-like-Rust Transpiler — All is Heap (v4.10.4)
+            Go-like-Rust Transpiler — All is Heap (v4.10.5)
             ✅ Rust → Go heap mode executable release
             🔐 ProofLedger + SHA256 verification
             ⚙️ Everything lives on the heap.
