@@ -1,4 +1,4 @@
-name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.10.1 / Go Executable Release)"
+name: "Go-like-Rust Transpiler — All is Heap (Heap-Hop Edition v4.10.2 / Go Executable Release)"
 
 on:
   push:
@@ -148,7 +148,11 @@ func main() {
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             pwsh -NoLogo -NoProfile -Command 'Get-ChildItem build | ForEach-Object { $h = Get-FileHash $_.FullName -Algorithm SHA256; "$($h.Hash)  $($_.Name)" }' | Sort-Object > "proof/sha256sum-${{ matrix.os }}.txt"
           else
-            find build -type f -print0 | xargs -0 sha256sum | sort > "proof/sha256sum-${{ matrix.os }}.txt"
+            if command -v sha256sum >/dev/null 2>&1; then
+              find build -type f -print0 | xargs -0 sha256sum | sort > "proof/sha256sum-${{ matrix.os }}.txt"
+            else
+              find build -type f -exec shasum -a 256 "{}" \; | sort > "proof/sha256sum-${{ matrix.os }}.txt"
+            fi
           fi
 
       - name: Archive Artifacts
@@ -228,10 +232,11 @@ func main() {
           tag_name: heap-hop-${{ github.run_number }}-${{ steps.dates.outputs.utc_date }}
           name: "Heap-Hop Edition — All is Heap Executable (Go-like Rust Transpiler)"
           body: |
-            Go-like-Rust Transpiler — All is Heap (v4.10.1)
+            Go-like-Rust Transpiler — All is Heap (v4.10.2)
             ✅ Rust → Go heap mode executable release
             🔐 ProofLedger + SHA256 verification
             ⚙️ Everything lives on the heap.
           files: release-assets/*.zip
+          allowUpdates: true        # ✅ 릴리스 갱신 허용
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
