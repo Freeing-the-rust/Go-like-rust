@@ -147,7 +147,21 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           ZIP="release-assets/go-like-rust-${{ matrix.os }}.zip"
-          zip -rq "$ZIP" build proof ledger transpiled
+          
+          # 🚀 FIX: 'zip'은 Windows에 없지만 '7z'는 있습니다.
+          # 'zip'이 있으면 사용하고, 없으면 '7z'를 사용하도록 폴백을 추가합니다.
+          if command -v zip >/dev/null 2>&1; then
+            echo "Using zip..."
+            zip -rq "$ZIP" build proof ledger transpiled
+          elif command -v 7z >/dev/null 2>&1; then
+            echo "Using 7z for Windows..."
+            # 'a' (add to archive), '-tzip' (set archive type to zip), '-r' (recursive)
+            # 7z은 출력이 매우 많으므로 /dev/null로 리디렉션합니다.
+            7z a -tzip -r "$ZIP" ./build ./proof ./ledger ./transpiled > /dev/null
+          else
+            echo "Error: Neither zip nor 7z found. Cannot archive artifacts."
+            exit 1
+          fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
