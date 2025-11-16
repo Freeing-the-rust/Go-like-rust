@@ -1,4 +1,4 @@
-name: Go-like-Rust — Heap-Hop Build & Release
+name: Go-like-Rust - Heap-Hop Build & Release
 
 on:
   push:
@@ -84,7 +84,7 @@ import (
   "os"
 )
 func main() {
-  fmt.Println("All is heap — Heap-Hop Edition running.")
+  fmt.Println("All is heap - Heap-Hop Edition running.")
   fmt.Println("Every value lives on the heap.")
   reader := bufio.NewReader(os.Stdin)
   _, _ = reader.ReadBytes('\n')
@@ -160,7 +160,7 @@ EOF
         with:
           path: release-assets
           pattern: "go-like-rust-*"
-        merge-multiple: true
+          merge-multiple: true
 
       - name: Extract Proof & Ledger
         run: |
@@ -192,7 +192,7 @@ EOF
         run: |
           BODY="release_body.md"
 
-          echo "Go-like-Rust — Heap-Hop Edition (${{ env.APP_VERSION }})" > $BODY
+          echo "Go-like-Rust - Heap-Hop Edition (${{ env.APP_VERSION }})" > $BODY
           echo "" >> $BODY
           echo "## 🔐 SHA256 Proof" >> $BODY
           echo '```' >> $BODY
@@ -213,7 +213,7 @@ EOF
         uses: softprops/action-gh-release@v2
         with:
           tag_name: heap-hop-${{ env.APP_VERSION }}
-          name: "Heap-Hop Edition — All is Heap (Go-like-Rust ${{ env.APP_VERSION }})"
+          name: "Heap-Hop Edition - All is Heap (Go-like-Rust ${{ env.APP_VERSION }})"
           body: ${{ steps.release_notes.outputs.body }}
           files: release-assets/*.zip
           overwrite_files: true
