@@ -159,20 +159,17 @@ jobs:
       # ------------------------------ Windows (PE64)
       - name: Build Executable via NASM (Windows)
         if: runner.os == 'Windows'
+        shell: cmd
         run: |
-          set -euo pipefail
-          echo "🔨 Windows NASM build..."
+         echo 🔨 Windows NASM build...
+         nasm -f win64 asm/main.asm -o asm/main.obj
+         link.exe /SUBSYSTEM:CONSOLE asm/main.obj /OUT:build/spongelang_windows.exe
 
-          nasm -f win64 asm/main.asm -o asm/main.obj
-          link.exe /SUBSYSTEM:CONSOLE asm/main.obj /OUT:build/spongelang_windows.exe
-
-          {
-            echo "Version: ${{ env.APP_VERSION }}"
-            date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
-            echo "Commit: ${{ github.sha }}"
-            echo "Pipeline: Rust → Go → SpongeLang → NASM"
-            echo "OS: Windows"
-          } > ledger/build-info-windows.txt
+         (
+         echo Version: ${{ env.APP_VERSION }}
+         echo Pipeline: Rust → Go → SpongeLang → NASM
+         echo OS: Windows
+         ) > ledger/build-info-windows.txt
 
 
       # ------------------------------ Linux (ELF64)
