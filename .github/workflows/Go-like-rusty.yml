@@ -201,15 +201,25 @@ jobs:
 
          nasm -fmacho64 asm/main.asm -o asm/main.o
 
-         ld -platform_version macos 11.0 11.0 -arch x86_64 asm/main.o -o build/spongelang_macos
+         SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+
+         ld \
+         -platform_version macos 11.0 11.0 \
+         -arch x86_64 \
+         -syslibroot "$SDKROOT" \
+         -lSystem \
+         -e _main \
+         asm/main.o \
+         -o build/spongelang_macos
 
          {
-          echo "Version: ${{ env.APP_VERSION }}"
-          date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
-          echo "Commit: ${{ github.sha }}"
-          echo "Pipeline: Rust → Go → SpongeLang → NASM"
-          echo "OS: macOS"
-          } > ledger/build-info-macos.txt
+         echo "Version: ${{ env.APP_VERSION }}"
+         date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
+         echo "Commit: ${{ github.sha }}"
+         echo "Pipeline: Rust → Go → SpongeLang → NASM"
+         echo "OS: macOS"
+         } > ledger/build-info-macos.txt
+
 
       # =====================================================================
       # Stage 6: SHA256 Proof
