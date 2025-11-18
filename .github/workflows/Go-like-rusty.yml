@@ -304,12 +304,13 @@ jobs:
           git pull --rebase --autostash || true
           git add proof ledger
 
-          if ! git.diff --cached --quiet; then
-            git.commit -m "Proof/Ledger sync (${{ env.APP_VERSION }}) [skip ci]"
+          if ! git diff --cached --quiet; then
+            git commit -m "Proof/Ledger sync (${{ env.APP_VERSION }}) [skip ci]"
             git push
           else
             echo "No changes."
           fi
+
 
       - name: Build Release Body
         id: release_notes
