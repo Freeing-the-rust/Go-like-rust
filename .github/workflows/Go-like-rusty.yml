@@ -196,20 +196,20 @@ jobs:
       - name: Build Executable via NASM (macOS)
         if: runner.os == 'macOS'
         run: |
-          set -euo pipefail
-          echo "🔨 macOS NASM build..."
+         set -euo pipefail
+         echo "🔨 macOS NASM build..."
 
-          nasm -fmacho64 asm/main.asm -o asm/main.o
-          ld asm/main.o -o build/spongelang_macos
+         nasm -fmacho64 asm/main.asm -o asm/main.o
 
-          {
-            echo "Version: ${{ env.APP_VERSION }}"
-            date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
-            echo "Commit: ${{ github.sha }}"
-            echo "Pipeline: Rust → Go → SpongeLang → NASM"
-            echo "OS: macOS"
+         ld -platform_version macos 11.0 11.0 -arch x86_64 asm/main.o -o build/spongelang_macos
+
+         {
+          echo "Version: ${{ env.APP_VERSION }}"
+          date -u +"Build Time (UTC): %Y-%m-%dT%H:%M:%SZ"
+          echo "Commit: ${{ github.sha }}"
+          echo "Pipeline: Rust → Go → SpongeLang → NASM"
+          echo "OS: macOS"
           } > ledger/build-info-macos.txt
-
 
       # =====================================================================
       # Stage 6: SHA256 Proof
