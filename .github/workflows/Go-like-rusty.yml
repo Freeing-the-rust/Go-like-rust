@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "v4.10.6"
+  APP_VERSION: "v4.10.7"
 
 permissions:
   contents: read
@@ -99,13 +99,13 @@ func main() {
 }
 EOF
           fi
+
       # ------------------------------
       # Stage 3: Go → SpongeLang Meaning IR
       # ------------------------------
       - name: Extract Meaning (Go → SpongeLang IR)
         run: |
           set -euo pipefail
-
           MEANING="scripts/go_to_sponge_meaning.py"
 
           echo "🧠 Extracting SpongeLang Meaning from Go..."
@@ -118,7 +118,7 @@ EOF
           fi
 
       # ------------------------------
-      # Stage 4: SpongeLang IR → NASM Assembly
+      # Stage 4: SpongeLang IR → NASM
       # ------------------------------
       - name: Generate NASM Assembly
         run: |
@@ -142,13 +142,18 @@ EOF
         run: |
           set -euo pipefail
 
-          GOOS_NAME=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          # Normalize OS name
+          case "${{ runner.os }}" in
+            "Linux")   GOOS_NAME="ubuntu" ;;
+            "macOS")   GOOS_NAME="macos" ;;
+            "Windows") GOOS_NAME="windows" ;;
+          esac
 
           OUT="build/spongelang_${GOOS_NAME}"
 
           echo "🔨 Building NASM executable for ${GOOS_NAME}..."
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [[ "$GOOS_NAME" == "windows" ]]; then
             nasm -f win64 asm/main.asm -o asm/main.obj
             link.exe /SUBSYSTEM:CONSOLE asm/main.obj /OUT:${OUT}.exe
           else
@@ -181,8 +186,14 @@ EOF
       # ------------------------------
       - name: Create ZIP
         run: |
+          case "${{ runner.os }}" in
+            "Linux")   OSN="ubuntu" ;;
+            "macOS")   OSN="macos" ;;
+            "Windows") OSN="windows" ;;
+          esac
+
           mkdir -p release-assets
-          ZIP="release-assets/go-like-rust-${{ matrix.os }}.zip"
+          ZIP="release-assets/go-like-rust-${OSN}.zip"
 
           if command -v zip >/dev/null 2>&1; then
             zip -rq "$ZIP" build proof ledger transpiled asm
@@ -200,7 +211,7 @@ EOF
         uses: actions/upload-artifact@v4
         with:
           name: go-like-rust-${{ matrix.os }}-${{ github.run_id }}
-          path: release-assets/go-like-rust-${{ matrix.os }}.zip
+          path: release-assets/*.zip
           retention-days: 3
 
   # =====================================================================
