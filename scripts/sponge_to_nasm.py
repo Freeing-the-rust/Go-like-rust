@@ -51,7 +51,8 @@ def gen_macos(actions):
             code.append("    ; print")
             code.append("    mov rax, 0x2000004")
             code.append("    mov rdi, 1")
-            code.append(f"    mov rsi, msg{idx}")
+            code.append(f"    lea rsi, [rel msg{idx}]")
+
             code.append(f"    mov rdx, msg{idx}_len")
             code.append("    syscall")
             idx += 1
